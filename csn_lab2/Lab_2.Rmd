@@ -1,0 +1,304 @@
+---
+title: "Lab_2"
+author: "Sanderijn van Loosdrecht"
+date: "2024-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(igraph)
+library(scales)
+library(Hmisc)
+
+```
+
+## Set up
+
+```{r loading}
+degree_sequence = read.table("./data/English_in-degree_sequence.txt",
+header = FALSE)
+
+```
+
+## Generating the table
+
+
+
+```{r Table}
+dim(degree_sequence)[1]
+nrow(degree_sequence)
+sum(degree_sequence)
+sum(degree_sequence)/dim(degree_sequence)[1]
+
+
+```
+
+```{r Reading}
+write_summary <- function(language,file) {
+   degree_sequence = read.table(file, header = FALSE)
+   cat(language,length(degree_sequence$V1),max(degree_sequence$V1),sum(degree_sequence$V1)/length(degree_sequence$V1),length(degree_sequence$V1)/sum(degree_sequence$V1),"\n")
+}
+
+source = read.table("list_zeta.txt", 
+         header = TRUE,               # this is to indicate the first line of the file contains the names of the columns instead of the real data
+         as.is = c("language","file") # this is need to have the cells treated as real strings and not as categorial data.
+        )
+for (x in 1:nrow(source)) {
+    write_summary(source$language[x], source$file[x])
+}
+
+```
+``` {r Language selection}
+# Example degree sequences for different languages
+language_data <- list(
+  Language1 = degree_sequence1,
+  Language2 = degree_sequence2,
+  Language3 = degree_sequence3
+)
+``` 
+
+```{r Visualizations}
+
+degree_sequence = read.table("./data/English_in-degree_sequence.txt", header = FALSE)
+degree_spectrum = table(degree_sequence)
+
+barplot(degree_spectrum, main = "English",
+xlab = "degree", ylab = "number of vertices")
+
+barplot(degree_spectrum, main = "English",
+xlab = "degree", ylab = "number of vertices", log = "xy")
+
+
+```
+
+```{r Parameter loading}
+require("stats4") # for MLE
+require("VGAM") # for the Riemann-zeta function
+
+x <- degree_sequence$V1
+minus_log_likelihood_zeta <- function(gamma) {
+length(x) * log(zeta(gamma)) + gamma * sum(log(x))
+}
+
+x
+
+mle_zeta <- mle(minus_log_likelihood_zeta,
+start = list(gamma = 2), # Start value is 2
+method = "L-BFGS-B",
+lower = c(1.0000001))
+
+summary(mle_zeta)
+
+attributes(summary(mle_zeta))
+
+attributes(summary(mle_zeta))$coef[1] # best fit.
+
+
+```
+
+
+```{r Model selection & Log likelihood estimator}
+attributes(summary(mle_zeta))$m2logL
+
+get_AIC <- function(m2logL,K,N) {
+m2logL + 2*K*N/(N-K-1) # AIC with a correction for sample size
+}
+
+get_AIC(attributes(summary(mle_zeta))$m2logL, 1, length(x))
+mle_zeta
+```
+
+```{r zetaFunction gamma2}
+
+estimate_zeta <- function(x) {
+  # Calculate the number of observations
+  x
+  
+  # Define the negative log-likelihood function for the Zeta distribution
+  minus_log_likelihood_zeta <- function(gamma) {
+    return(length(x) * log(zeta(gamma)) + gamma * sum(log(x)))
+  }
+  
+  
+  # Estimate the parameter gamma (for the Zeta distribution) with initial value = 2
+  mle_zeta <- mle(minus_log_likelihood_zeta, 
+                  start = list(gamma = 2),      # Initial guess for gamma
+                  method = "L-BFGS-B",          # Optimization method
+                  lower = c(1.0000001))         # Gamma must be > 1
+  
+  get_AIC <- function(m2logL,K,N) {
+  m2logL + 2*K*N/(N-K-1) # AIC with a correction for sample size
+  }
+  # Extract the estimated parameter gamma
+  estimated_gamma <- coef(mle_zeta)["gamma"]
+  
+  N <- length(x)
+  L <- attributes(summary(mle_zeta))$m2logL
+  AIC <- get_AIC(attributes(summary(mle_zeta))$m2logL, 1, length(x))
+  gamma <- estimated_gamma
+  q <- sum(x)/dim(x)[1]
+  # Return the estimated gamma
+  return(list("L"=L, "gamma"=gamma, "AIC"=AIC, "k"=1, "q"=q ))
+}
+
+```
+
+```{r Zeta2 Values}
+
+write_summary <- function(language,file) {
+   degree_sequence = read.table(file, header = FALSE)
+   cat(language, "&", # language
+       toString(estimate_zeta(degree_sequence$V1)),
+       "\\\\ \n")
+}
+
+source = read.table("list_in.txt", 
+         header = TRUE,               # this is to indicate the first line of the file contains the names of the columns instead of the real data
+         as.is = c("language","file") # this is need to have the cells treated as real strings and not as categorial data.
+        )
+for (x in 1:nrow(source)) {
+    write_summary(source$language[x], source$file[x])
+}
+```
+
+``` {r Truncated zeta}
+
+# Function to estimate parameters for right-truncated Zeta distribution
+estimate_right_truncated_zeta <- function(x, kmax, M0) {
+  # Define the negative log-likelihood function for the right-truncated Zeta distribution
+  minus_log_likelihood_truncated_zeta <- function(gamma) {
+    # Calculate the log-likelihood for the truncated Zeta distribution
+    log_likelihood <- length(x) * log(zeta(gamma)) + 
+                      gamma * sum(log(x)) - 
+                      length(x) * log(zeta(gamma, kmax))  # log(H(kmax; )) effect
+    return(-log_likelihood)  # Return negative log-likelihood
+  }
+  
+  # Estimate the parameter gamma with initial value = 2
+  mle_zeta <- mle(minus_log_likelihood_truncated_zeta, 
+                  start = list(gamma = 1.5),      # Initial guess for gamma
+                  method = "L-BFGS-B",          # Optimization method
+                  lower = c(1.0000001))         # Gamma must be > 1
+  
+  get_AIC <- function(m2logL, K, N) {
+    m2logL + 2 * K * N / (N - K - 1) # AIC with a correction for sample size
+  }
+  
+  # Extract the estimated parameter gamma
+  estimated_gamma <- coef(mle_zeta)["gamma"]
+  
+  N <- length(x)
+  L <- attributes(summary(mle_zeta))$m2logL
+  AIC <- get_AIC(L, 1, N)  # k = 1 for gamma
+  
+  # Return the estimated parameters for the right-truncated Zeta
+  return(list("L" = L, "gamma" = estimated_gamma, "AIC" = AIC, "M0" = M0, "kmax" = kmax))
+}
+``` 
+
+
+```{r Zeta2 Values}
+
+estimate_right_truncated_zeta <- function(x, kmax_initial, M0) {
+  # Check if any x values are less than or equal to zero
+  if (any(x <= 0)) {
+    stop("All values in x must be positive.")
+  }
+  
+  # Determine the maximum value in the dataset
+  max_x <- max(x)
+  
+  # Define the negative log-likelihood function for the right-truncated Zeta distribution
+  minus_log_likelihood_truncated_zeta <- function(gamma, kmax) {
+    # Check if gamma is too small or kmax is out of bounds
+    if (gamma <= 1 || kmax <= 0 || kmax > max_x) return(Inf)  # Ensure gamma > 1 and kmax is valid
+    
+    # Check if zeta functions produce finite values
+    zeta_gamma <- zeta(gamma)
+    zeta_gamma_kmax <- zeta(gamma, kmax)
+    
+    if (is.nan(zeta_gamma) || is.nan(zeta_gamma_kmax) || zeta_gamma_kmax <= 0) {
+      return(Inf)  # Return Inf if zeta produces NaN or zero/negative
+    }
+    
+    # Calculate the log-likelihood
+    log_likelihood <- length(x) * log(zeta_gamma) + 
+                      gamma * sum(log(x)) - 
+                      length(x) * log(zeta_gamma_kmax)  # log(H(kmax; )) effect
+    
+    return(-log_likelihood)  # Return negative log-likelihood
+  }
+  
+  # Set lower and upper bounds for kmax
+  lower_bound_kmax <- 1  # kmax should be at least 1 (since we're truncating at kmax)
+  upper_bound_kmax <- max_x  # kmax should not exceed the maximum value in x
+  
+  # Estimate the parameter gamma and kmax with initial values
+  mle_zeta <- tryCatch({
+    mle(minus_log_likelihood_truncated_zeta, 
+        start = list(gamma = 2, kmax = kmax_initial),  # Initial guesses
+        method = "L-BFGS-B",                          # Use a method that supports bounds
+        lower = c(1.0000001, lower_bound_kmax),      # Lower bounds for gamma and kmax
+        upper = c(Inf, upper_bound_kmax))            # Upper bounds for gamma (Inf) and kmax
+  }, error = function(e) {
+    message("Error in MLE estimation: ", e$message)
+    return(NULL)
+  })
+  
+  if (is.null(mle_zeta)) {
+    return(NULL)  # Return NULL if MLE failed
+  }
+
+  get_AIC <- function(m2logL, K, N) {
+    m2logL + 2 * K * N / (N - K - 1) # AIC with a correction for sample size
+  }
+  
+  # Extract the estimated parameters
+  estimated_params <- coef(mle_zeta)
+  estimated_gamma <- estimated_params["gamma"]
+  estimated_kmax <- estimated_params["kmax"]
+  
+  N <- length(x)
+  L <- attributes(summary(mle_zeta))$m2logL
+  AIC <- get_AIC(L, 2, N)  # k = 2 for gamma and kmax
+  
+  # Return the estimated parameters for the right-truncated Zeta
+  return(list("L" = L, "gamma" = estimated_gamma, "kmax" = estimated_kmax, "AIC" = AIC, "M0" = M0))
+}
+
+
+```
+
+```{r Truncated}
+
+# Function to write summary for each language and file
+write_summary <- function(language, file) {
+  degree_sequence <- read.table(file, header = FALSE)
+  
+  # Ensure values are positive
+  if (any(degree_sequence$V1 <= 0)) {
+    message(paste("Invalid data in file:", file))
+    return(NULL)
+  }
+  
+  # Perform estimation
+  zeta_estimation <- estimate_zeta(degree_sequence$V1)
+  truncated_zeta_estimation <- estimate_right_truncated_zeta(degree_sequence$V1, 1, 1)
+
+  # Output results
+  cat(language, "&", 
+      
+      toString(truncated_zeta_estimation), "\n")
+}
+
+# Read the source data
+source <- read.table("list_in.txt", 
+                     header = TRUE,               
+                     as.is = c("language", "file"))
+
+# Iterate through each entry in the source data
+for (x in 1:nrow(source)) {
+    write_summary(source$language[x], source$file[x])
+}
+```
