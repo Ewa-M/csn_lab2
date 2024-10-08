@@ -11,8 +11,9 @@ write_summary <- function(language, file) {
   #result_zeta_right_truncated <- calculate_zeta_right_truncated(x)
 
   cat(language, "&", # language
-      result_poisson$param, "&", #lambda
-      result_zeta$param, "&", #gamma_1
+      result_poisson$param, "&", 
+      result_geometric$param, "&", 
+      result_zeta$param, "&",
       #result_zeta_right_truncated$param, "&", #gamma_2
       "gamma_2 &",
       "k_max", "&", #k_max
@@ -47,7 +48,7 @@ for (x in 1:nrow(source)) {
   write_summary(source$language[x], source$file[x])
 }
 
-print("AIC \n\n")
+print("AIC")
 
 for (x in 1:nrow(source)) {
   write_summary_AIC(source$language[x], source$file[x])
